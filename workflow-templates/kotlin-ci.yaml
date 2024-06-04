@@ -1,0 +1,215 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  ci-cd:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+
+    env:
+      CONTAINER_REGISTRY: "976269514007.dkr.ecr.us-east-1.amazonaws.com"
+      CODEARTIFACT_AUTH_TOKEN: ${{ secrets.AWS_CODEARTIFACT_TOKEN }}
+      USE_CODE_ARTIFACT: ${{ github.event.inputs.USE_CODE_ARTIFACT || 'false' }}
+      GRAAL_BUILD: ${{ github.event.inputs.USE_GRAAL_VM || 'false' }}
+      GIT_REPO_HTTP: ${{ secrets.GIT_REPO_HTTP }}
+      SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+      SONAR_AUTH_TOKEN: ${{ secrets.SONAR_AUTH_TOKEN }}
+      GIT_CREDENTIALS: ${{ secrets.GIT_CREDENTIALS }}
+      SERVICE_NAME: ${{ github.event.repository.name.replace('-build', '').replace('-v2', '') }}
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Set environment variables
+      run: |
+        echo "CONTAINER_REGISTRY=$CONTAINER_REGISTRY" >> $GITHUB_ENV
+        echo "REPO=$CONTAINER_REGISTRY/$SERVICE_NAME" >> $GITHUB_ENV
+        TAG="${{ github.event.inputs.SQUAD_NAME || github.event.inputs.DEPLOY_ENV }}"
+        echo "TAG=$TAG" >> $GITHUB_ENV
+        BASE_BUILD_NUMBER="${{ github.event.inputs.BASE_BUILD_NUMBER || 'b${{ github.run_number }}' }}"
+        echo "BASE_BUILD_NUMBER=$BASE_BUILD_NUMBER" >> $GITHUB_ENV
+        echo "SORT_TAG=$TAG-${{ github.run_number }}" >> $GITHUB_ENV
+        echo "USE_CODE_ARTIFACT=$USE_CODE_ARTIFACT" >> $GITHUB_ENV
+        echo "GRAAL_BUILD=$GRAAL_BUILD" >> $GITHUB_ENV
+
+    - name: Code Checkout
+      if: ${{ github.event.inputs.DEPLOY_ENV != 'production' && github.event.inputs.OPERATION != 'rollback' }}
+      run: |
+        if [ -z "${{ github.event.inputs.BRANCH_OPTION }}" ]; then
+          echo "Empty BRANCH_OPTION."
+          exit 1
+        fi
+        rm -rf *
+        git clone -b ${{ github.event.inputs.BRANCH_OPTION }} ${{ secrets.GIT_REPO }}
+
+    - name: SAST Checkmarx
+      if: ${{ github.event.inputs.DEPLOY_ENV != 'production' && github.event.inputs.OPERATION != 'rollback' }}
+      run: echo "Desativado"
+      
+    - name: Config Build Dependencies
+      if: ${{ github.event.inputs.DEPLOY_ENV != 'production' && github.event.inputs.OPERATION != 'rollback' }}
+      run: |
+        asdf plugin-add java https://github.com/halcyon/asdf-java.git
+        asdf plugin-add gradle https://github.com/rfrancis/asdf-gradle.git
+        cd $SERVICE_NAME
+        asdf install
+        asdf global java $(cat .tool-versions | grep java | awk '{print $2}')
+        source $HOME/.asdf/plugins/java/set-java-home.bash
+
+    - name: Code build
+      if: ${{ github.event.inputs.DEPLOY_ENV != 'production' && github.event.inputs.OPERATION != 'rollback' && GRAAL_BUILD == 'false' }}
+      run: |
+        cd $SERVICE_NAME
+        export BRANCH_OPTION=${{ github.event.inputs.BRANCH_OPTION }}
+        export JAVA_HOME=$(asdf where java)
+        gradle --no-daemon --refresh-dependencies clean build -x test
+
+    - name: Code build GraalVM
+      if: ${{ github.event.inputs.DEPLOY_ENV != 'production' && github.event.inputs.OPERATION != 'rollback' && GRAAL_BUILD == 'true' }}
+      run: |
+        cd $SERVICE_NAME
+        export BRANCH_OPTION=${{ github.event.inputs.BRANCH_OPTION }}
+        export JAVA_HOME=$(asdf where java)
+        gradle --no-daemon --refresh-dependencies clean bootBuildImage -x test
+
+    - name: Execute unit tests
+      if: ${{ github.event.inputs.DEPLOY_ENV != 'production' && github.event.inputs.OPERATION != 'rollback' }}
+      run: |
+        cd $SERVICE_NAME
+        export BRANCH_OPTION=${{ github.event.inputs.BRANCH_OPTION }}
+        export JAVA_HOME=$(asdf where java)
+        gradle --no-daemon test
+
+    - name: Sonarqube
+      if: ${{ github.event.inputs.DEPLOY_ENV != 'production' && github.event.inputs.OPERATION != 'rollback' }}
+      uses: sonarsource/sonarcloud-github-action@v2
+      with:
+        args: >
+          sonar-scanner -X
+          -Dsonar.host.url=${{ secrets.SONAR_HOST_URL }}
+          -Dsonar.organization=pitagorasampli
+          -Dsonar.projectKey=ampli-backend:${{ github.event.repository.name.replace('-build', '').replace('-v2', '') }}
+          -Dsonar.token=${{ secrets.SONAR_AUTH_TOKEN }}
+
+    - name: Terraform Plan nonprod
+      if: ${{ github.event.inputs.DEPLOY_ENV != 'production' && github.event.inputs.OPERATION != 'rollback' }}
+      run: |
+        if [ -d "${{ github.event.repository.name.replace('-build', '').replace('-v2', '') }}/terraform" ]; then
+          cd $SERVICE_NAME/terraform
+          [ -d ~/.tfenv ] || git clone https://github.com/tfutils/tfenv.git ~/.tfenv
+          export PATH="$HOME/.tfenv/bin:$PATH"
+          tfenv install
+          terraform init
+          terraform workspace select $TAG || terraform workspace new $TAG
+          terraform plan
+        else
+          echo 'This Service does not have Terraform'
+        fi
+
+    - name: Terraform Apply nonprod
+      if: ${{ github.event.inputs.DEPLOY_ENV != 'production' && github.event.inputs.OPERATION != 'rollback' }}
+      run: |
+        if [ -d "${{ github.event.repository.name.replace('-build', '').replace('-v2', '') }}/terraform" ]; then
+          cd $SERVICE_NAME/terraform
+          [ -d ~/.tfenv ] || git clone https://github.com/tfutils/tfenv.git ~/.tfenv
+          export PATH="$HOME/.tfenv/bin:$PATH"
+          tfenv install
+          terraform init
+          terraform workspace select $TAG || terraform workspace new $TAG
+          terraform apply -auto-approve
+        else
+          echo 'This Service does not have Terraform'
+        fi
+
+    - name: Login to ECR
+      run: aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 976269514007.dkr.ecr.us-east-1.amazonaws.com
+
+    - name: Docker build
+      if: ${{ github.event.inputs.DEPLOY_ENV != 'production' && github.event.inputs.OPERATION != 'rollback' }}
+      run: |
+        docker buildx create --platform linux/amd64,linux/arm64 --use
+        docker buildx build --push --platform linux/amd64,linux/arm64 --build-arg VERSION=$BASE_BUILD_NUMBER --build-arg APPLICATION=$SERVICE_NAME --build-arg DD_GIT_REPOSITORY_URL=$GIT_REPO_HTTP --build-arg DD_GIT_COMMIT_SHA=$(git rev-parse HEAD) -t $REPO:$BASE_BUILD_NUMBER -f $SERVICE_NAME/Dockerfile .
+
+    - name: Docker tag and push
+      if: ${{ github.event.inputs.DEPLOY_ENV != 'production' && github.event.inputs.OPERATION != 'rollback' }}
+      run: |
+        if [ "$DEPLOY_ENV" == "production" ]; then
+          docker buildx imagetools create -t $REPO:production $REPO:$DOCKER_TAG
+          docker buildx imagetools create -t $REPO:production-${{ github.run_number }} $REPO:$DOCKER_TAG
+          docker buildx imagetools create -t $REPO:production-$BASE_BUILD_NUMBER $REPO:$DOCKER_TAG
+        elif [ "$DEPLOY_ENV" != "production" ] && [ "$OPERATION" == "rollback" ]; then
+          docker buildx imagetools create -t $REPO:$SORT_TAG $REPO:$DOCKER_TAG
+        else
+          docker buildx imagetools create -t $REPO:$TAG $REPO:$BASE_BUILD_NUMBER
+          docker buildx imagetools create -t $REPO:$SORT_TAG $REPO:$BASE_BUILD_NUMBER
+        fi
+
+    - name: Terraform Plan production
+      if: ${{ github.event.inputs.DEPLOY_ENV == 'production' && github.event.inputs.OPERATION != 'rollback' }}
+      run: |
+        if [ -d "${{ github.event.repository.name.replace('-build', '').replace('-v2', '') }}/terraform" ]; then
+          cd $SERVICE_NAME/terraform
+          [ -d ~/.tfenv ] || git clone https://github.com/tfutils/tfenv.git ~/.tfenv
+          export PATH="$HOME/.tfenv/bin:$PATH"
+          tfenv install
+          terraform init
+          terraform workspace select production || terraform workspace new production
+          terraform plan
+        else
+          echo 'This Service does not have Terraform'
+        fi
+
+    - name: Terraform Apply production
+      if: ${{ github.event.inputs.DEPLOY_ENV == 'production' && github.event.inputs.OPERATION != 'rollback' }}
+      run: |
+        if [ -d "${{ github.event.repository.name.replace('-build', '').replace('-v2', '') }}/terraform" ]; then
+          cd $SERVICE_NAME/terraform
+          [ -d ~/.tfenv ] || git clone https://github.com/tfutils/tfenv.git ~/.tfenv
+          export PATH="$HOME/.tfenv/bin:$PATH"
+          tfenv install
+          terraform init
+          terraform workspace select production || terraform workspace new production
+          terraform apply -auto-approve
+        else
+          echo 'This Service does not have Terraform'
+        fi
+
+    - name: Deploy production
+      if: ${{ github.event.inputs.DEPLOY_ENV == 'production' && github.event.inputs.OPERATION != 'rollback' }}
+      run: |
+        if [ -z "$DOCKER_TAG" ]; then
+          echo "Empty DOCKER_TAG."
+          exit 1
+        fi
+        if [ "$DEPLOY_ENV" == "production" ]; then
+          docker buildx imagetools create -t $REPO:production $REPO:$DOCKER_TAG
+          docker buildx imagetools create -t $REPO:production-${{ github.run_number }} $REPO:$DOCKER_TAG
+          docker buildx imagetools create -t $REPO:production-$BASE_BUILD_NUMBER $REPO:$DOCKER_TAG
+        elif [ "$DEPLOY_ENV" != "production" ] && [ "$OPERATION" == "rollback" ]; then
+          docker buildx imagetools create -t $REPO:$SORT_TAG $REPO:$DOCKER_TAG
+        else
+          docker buildx imagetools create -t $REPO:$TAG $REPO:$BASE_BUILD_NUMBER
+          docker buildx imagetools create -t $REPO:$SORT_TAG $REPO:$BASE_BUILD_NUMBER
+        fi
+
+    - name: Rollback
+      if: ${{ github.event.inputs.OPERATION == 'rollback' }}
+      run: |
+        if [ -z "$DOCKER_TAG" ]; then
+          echo "Empty DOCKER_TAG."
+          exit 1
+        fi
+        docker buildx imagetools create -t $REPO:$SORT_TAG $REPO:$DOCKER_TAG
+
+    - name: Clean Workspace
+      run: git clean -fdx

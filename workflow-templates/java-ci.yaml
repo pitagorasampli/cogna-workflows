@@ -1,0 +1,26 @@
+name: Java Organization CI
+
+on:
+  workflow_call:
+    inputs:
+      app_dir:
+        description: Set application path to build, leave empty if not needed
+        type: string
+        defaults: ./
+    # secrets:  # Defines the secrets that can be passed from the caller workflow
+    #   envPAT:  # Name of the secret
+    #     required: true  # Specifies that this secret is mandatory
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Clone git repository
+        uses: actions/checkout@v4
+
+      - name: Setup Gradle
+        uses: gradle/gradle-build-action@v2
+        
+      - name: Run build with Gradle Wrapper
+        run: ./${{ vars.APP_PATH }}/gradlew build
