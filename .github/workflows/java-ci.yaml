@@ -23,4 +23,4 @@ jobs:
         uses: gradle/gradle-build-action@v2
         
       - name: Run build with Gradle Wrapper
-        run: ./${{ vars.APP_PATH }}/gradlew build
+        run: ./${{ inputs.app_dir }}/gradlew build
