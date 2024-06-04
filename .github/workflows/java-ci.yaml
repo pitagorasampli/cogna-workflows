@@ -6,7 +6,7 @@ on:
       app_dir:
         description: Set application path to build, leave empty if not needed
         type: string
-        defaults: ./
+        default: ./
     # secrets:  # Defines the secrets that can be passed from the caller workflow
     #   envPAT:  # Name of the secret
     #     required: true  # Specifies that this secret is mandatory
