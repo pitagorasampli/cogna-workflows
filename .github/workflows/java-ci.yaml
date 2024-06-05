@@ -22,8 +22,5 @@ jobs:
       - name: Setup Gradle
         uses: gradle/gradle-build-action@v2
         
-      - name: Cd Application Directory
-        run: cd ./${{ inputs.app_dir }}
-
       - name: Run build with Gradle Wrapper
-        run: ./gradlew build
+        run: cd ./${{ inputs.app_dir }} && ./gradlew build
