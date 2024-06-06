@@ -23,7 +23,7 @@ jobs:
       - name: Clone git repository
         uses: actions/checkout@v4.1.6
 
-      - name: Setup Java
+      - name: Setup Java Version
         uses: actions/setup-java@v4.2.1
         with:
           distribution: 'adopt' # See 'Supported distributions' for available options
