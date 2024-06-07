@@ -10,7 +10,7 @@ on:
       use_code_artifact:
         description: Set usage of packages from Code Artifact
         type: boolean
-        default: true
+        default: false
       use_graal_vm:
         description: Use GraalVM to Build image
         type: boolean
