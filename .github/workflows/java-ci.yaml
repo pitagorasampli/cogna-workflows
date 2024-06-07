@@ -27,7 +27,8 @@ jobs:
         uses: actions/setup-java@v4.2.1
         with:
           distribution: 'adopt' # See 'Supported distributions' for available options
-          java-version: '${{ inputs.java_version }}'
+          # java-version: '${{ inputs.java_version }}'
+          java-version-file: ./${{ inputs.app_dir }}/.tool-versions
       
       - name: Get Gradle version
         id: get_gradle_version
