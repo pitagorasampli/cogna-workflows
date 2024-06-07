@@ -48,15 +48,16 @@ jobs:
         with:
           gradle-version: ${{ steps.get_gradle_version.outputs.GRADLE_VERSION }}
 
-      - name: Configure AWS
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-region: ${{ inputs.aws-region }}
+      # - name: Configure AWS
+      #   uses: aws-actions/configure-aws-credentials@v4
+      #   with:
+      #     aws-region: ${{ inputs.aws-region }}
 
       - name: Run tests
         run: cd ./${{ inputs.app_dir }} && gradle --no-daemon test
         env:
           USE_CODE_ARTIFACT: ${{ inputs.use_code_artifact }}
+          AWS_DEFAULT_REGION: ${{ inputs.aws-region }}
 
       - name: Run build with Gradle
         if: ${{ !inputs.use_graal_vm }}
