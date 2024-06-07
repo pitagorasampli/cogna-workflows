@@ -7,6 +7,14 @@ on:
         description: Set application path to build, leave empty if not needed
         type: string
         default: ./
+      use_code_artifact:
+        description: Set usage of packages from Code Artifact
+        type: boolean
+        default: true
+      use_graal_vm:
+        description: Use GraalVM to Build image
+        type: boolean
+        default: false
     # secrets:  # Defines the secrets that can be passed from the caller workflow
     #   envPAT:  # Name of the secret
     #     required: true  # Specifies that this secret is mandatory
@@ -35,5 +43,19 @@ jobs:
         with:
           gradle-version: ${{ steps.get_gradle_version.outputs.GRADLE_VERSION }}
 
-      - name: Run build with Gradle Wrapper
+      - name: Run tests
+        run: cd ./${{ inputs.app_dir }} && gradle --no-daemon test
+        env:
+          USE_CODE_ARTIFACT: ${{ inputs.use_code_artifact }}
+
+      - name: Run build with Gradle
+        if: ${{ !inputs.use_graal_vm }}
         run: cd ./${{ inputs.app_dir }} && gradle --no-daemon clean build -x test
+        env:
+          USE_CODE_ARTIFACT: ${{ inputs.use_code_artifact }}
+
+      - name: Run build with Gradle and GraalVM
+        if: ${{ inputs.use_graal_vm }}
+        run: cd ./${{ inputs.app_dir }} && gradle --no-daemon --refresh-dependencies clean bootBuildImage -x test
+        env:
+          USE_CODE_ARTIFACT: ${{ inputs.use_code_artifact }}
