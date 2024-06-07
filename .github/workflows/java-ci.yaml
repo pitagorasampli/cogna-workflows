@@ -7,10 +7,6 @@ on:
         description: Set application path to build, leave empty if not needed
         type: string
         default: ./
-      java_version:
-        description: Set java version used in the build
-        type: string
-        default: '22'
     # secrets:  # Defines the secrets that can be passed from the caller workflow
     #   envPAT:  # Name of the secret
     #     required: true  # Specifies that this secret is mandatory
