@@ -15,6 +15,11 @@ on:
         description: Use GraalVM to Build image
         type: boolean
         default: false
+      aws-region:
+        description: Which AWS region to use
+        type: string
+        default: us-east-1
+
     # secrets:  # Defines the secrets that can be passed from the caller workflow
     #   envPAT:  # Name of the secret
     #     required: true  # Specifies that this secret is mandatory
@@ -42,6 +47,11 @@ jobs:
         uses: gradle/gradle-build-action@v3.3.2
         with:
           gradle-version: ${{ steps.get_gradle_version.outputs.GRADLE_VERSION }}
+
+      - name: Configure AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ inputs.aws-region }}
 
       - name: Run tests
         run: cd ./${{ inputs.app_dir }} && gradle --no-daemon test
