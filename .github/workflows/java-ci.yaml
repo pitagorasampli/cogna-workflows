@@ -48,10 +48,10 @@ jobs:
         with:
           gradle-version: ${{ steps.get_gradle_version.outputs.GRADLE_VERSION }}
 
-      # - name: Configure AWS
-      #   uses: aws-actions/configure-aws-credentials@v4
-      #   with:
-      #     aws-region: ${{ inputs.aws-region }}
+      - name: Configure AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ inputs.aws-region }}
 
       - name: Run tests
         run: cd ./${{ inputs.app_dir }} && gradle --no-daemon test
