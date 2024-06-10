@@ -57,7 +57,7 @@ jobs:
         with:
           audience: sts.amazonaws.com
           aws-region: ${{ inputs.aws-region }}
-          role-to-assume: GitHubActions
+          role-to-assume: arn:aws:iam::486300737953:role/GitHubActions
 
       - name: Run tests
         run: cd ./${{ inputs.app_dir }} && gradle --no-daemon test
