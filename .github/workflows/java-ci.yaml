@@ -24,6 +24,10 @@ on:
     #   envPAT:  # Name of the secret
     #     required: true  # Specifies that this secret is mandatory
 
+permissions: 
+  id-token: write
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -51,7 +55,9 @@ jobs:
       - name: Configure AWS
         uses: aws-actions/configure-aws-credentials@v4
         with:
+          audience: sts.amazonaws.com
           aws-region: ${{ inputs.aws-region }}
+          role-to-assume: GitHubActions
 
       - name: Run tests
         run: cd ./${{ inputs.app_dir }} && gradle --no-daemon test
